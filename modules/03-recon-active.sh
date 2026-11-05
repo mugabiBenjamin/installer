@@ -23,7 +23,7 @@ ensure_cmd dnsenum apt_install dnsenum
 ensure_cmd fierce uv_tool_install fierce fierce fierce
 ensure_cmd wafw00f uv_tool_install wafw00f wafw00f wafw00f
 ensure_cmd arjun uv_tool_install arjun arjun arjun
-ensure_cmd paramspider uv_tool_install paramspider paramspider paramspider
+ensure_cmd paramspider uv_tool_install paramspider "git+https://github.com/devanshbatham/ParamSpider.git" paramspider
 ensure_cmd git-dumper uv_tool_install git-dumper git-dumper git-dumper
 
 section "Python Discovery Scripts"

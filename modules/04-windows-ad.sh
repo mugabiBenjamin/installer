@@ -183,7 +183,32 @@ fi
 
 section "Advanced Shell Handlers"
 
-ensure_cmd pwncat uv_tool_install pwncat-cs pwncat-cs pwncat
+if ! command -v pwncat >/dev/null 2>&1; then
+  uv_tool_install pwncat-cs pwncat-cs pwncat-cs pwncat-cs
+  PWNCAT_DIR="${TOOLS_DIR}/pwncat-cs"
+  # pwncat-cs 0.5.4 still imports pkg_resources, which needs the distutils
+  # shim from setuptools<81 and an explicit setuptools import on Python 3.12.
+  if uv pip install --python "${PWNCAT_DIR}/.venv/bin/python" 'setuptools<81'; then
+    cat > "${PWNCAT_DIR}/pwncat-import-shim.py" <<'PY'
+import sys
+import setuptools  # noqa: F401
+from pwncat.__main__ import main
+
+sys.argv[0] = "pwncat"
+main()
+PY
+    sudo tee "${OSINT_BIN}/pwncat" >/dev/null <<EOF
+#!/usr/bin/env bash
+exec "${PWNCAT_DIR}/.venv/bin/python" "${PWNCAT_DIR}/pwncat-import-shim.py" "\$@"
+EOF
+    sudo chmod +x "${OSINT_BIN}/pwncat"
+    log "pwncat installed (${OSINT_BIN}/pwncat)"
+  else
+    warn "pwncat: failed to install setuptools compatibility dependency"
+  fi
+else
+  warn "pwncat already installed — skipping"
+fi
 
 section "Post-Install Instructions"
 

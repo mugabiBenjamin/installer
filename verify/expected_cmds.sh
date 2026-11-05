@@ -16,7 +16,7 @@ EXPECTED_CMDS=(
   whatweb ffuf feroxbuster httpx nuclei dnsx katana kr sqlmap
   
   # Recon passive
-  shodan censys theHarvester spiderfoot recon-ng sherlock trufflehog assetfinder waybackurls holehe crosslinked
+  shodan censys cloud_enum theHarvester spiderfoot recon-ng sherlock trufflehog assetfinder waybackurls holehe crosslinked
   
   # Recon active
   dnsrecon dnsenum fierce wafw00f arjun paramspider linkfinder secretfinder git-dumper dalfox metabigor photon

@@ -61,11 +61,11 @@ mamba_install() {
 }
 
 uv_tool_install() {
-  local name="$1" pkg="$2" binary="$3"
+  local name="$1" pkg="$2" binary="$3" link_name="${4:-$3}"
   local tool_dir="${TOOLS_DIR}/${name}"
 
-  if command -v "${binary}" >/dev/null 2>&1; then
-    warn "${binary} already installed — skipping"
+  if command -v "${link_name}" >/dev/null 2>&1; then
+    warn "${link_name} already installed — skipping"
     return 0
   fi
 
@@ -80,8 +80,8 @@ uv_tool_install() {
 
   uv venv --clear "${tool_dir}/.venv" \
     && uv pip install --python "${tool_dir}/.venv/bin/python" "${pkg}" \
-    && sudo ln -sf "${tool_dir}/.venv/bin/${binary}" "${OSINT_BIN}/${binary}" \
-    && log "${name} installed (${OSINT_BIN}/${binary})" \
+    && sudo ln -sf "${tool_dir}/.venv/bin/${binary}" "${OSINT_BIN}/${link_name}" \
+    && log "${name} installed (${OSINT_BIN}/${link_name})" \
     || warn "${name}: uv install failed"
 }
 
