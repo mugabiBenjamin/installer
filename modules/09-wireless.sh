@@ -20,7 +20,9 @@ ensure_cmd aircrack-ng apt_install aircrack-ng
 
 section "HCX Tools"
 
-ensure_cmd hcxtools apt_install hcxtools
+# The hcxtools package provides hcxpcapngtool, hcxhashtool, etc., but no
+# binary named "hcxtools".
+ensure_cmd hcxpcapngtool apt_install hcxtools
 
 if ! command -v hcxdumptool >/dev/null 2>&1; then
   log "Installing hcxdumptool..."

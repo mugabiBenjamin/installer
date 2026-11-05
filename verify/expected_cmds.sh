@@ -28,7 +28,7 @@ EXPECTED_CMDS=(
   hashcat john hydra fcrackzip haiti nth cewl cupp username-anarchy
   
   # Wireless
-  aircrack-ng airodump-ng hcxtools hcxdumptool
+  aircrack-ng airodump-ng hcxpcapngtool hcxdumptool
   
   # Web attacks
   xsstrike jwt_tool commix byp4xx interactsh-client corscanner ghauri
