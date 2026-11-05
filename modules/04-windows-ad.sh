@@ -21,19 +21,30 @@ banner "Module 04: Windows & Active Directory Attacks"
 
 section "Impacket"
 
-if ! command -v impacket-secretsdump >/dev/null 2>&1; then
+IMPACKET_CMDS=(impacket-secretsdump impacket-psexec impacket-wmiexec)
+impacket_ready=true
+for cmd in "${IMPACKET_CMDS[@]}"; do
+  command -v "$cmd" >/dev/null 2>&1 || impacket_ready=false
+done
+
+if [ "$impacket_ready" = false ]; then
   log "Installing Impacket..."
   IMPACKET_DIR="${TOOLS_DIR}/impacket"
   clone_or_update "https://github.com/fortra/impacket.git" "${IMPACKET_DIR}"
   if [ -d "${IMPACKET_DIR}" ]; then
     (
       cd "${IMPACKET_DIR}"
-      uv venv --clear .venv
-      uv pip install --python .venv/bin/python -e .
+      uv venv --clear .venv && uv pip install --python .venv/bin/python -e .
     ) && {
-      for script in "${IMPACKET_DIR}/.venv/bin/"impacket-*; do
+      # Upstream now installs scripts as psexec.py, wmiexec.py, etc. rather
+      # than the impacket-* names provided by the Debian package.
+      for script in "${IMPACKET_DIR}/.venv/bin/"*.py; do
         [ -x "$script" ] || continue
-        sudo ln -sf "$script" "${OSINT_BIN}/$(basename "$script")"
+        sudo ln -sf "$script" "${OSINT_BIN}/impacket-$(basename "$script" .py)"
+      done
+      hash -r
+      for cmd in "${IMPACKET_CMDS[@]}"; do
+        command -v "$cmd" >/dev/null 2>&1 || warn "Impacket: $cmd still missing"
       done
       log "Impacket installed — scripts symlinked to ${OSINT_BIN}"
     } || warn "Impacket: uv pip install failed"
