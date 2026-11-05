@@ -51,7 +51,7 @@ fi
 
 section "Go Discovery Scripts"
 
-ensure_cmd dalfox go_install github.com/hahwul/dalfox/v2/cmd/dalfox
+ensure_cmd dalfox go_install github.com/hahwul/dalfox/v2
 ensure_cmd metabigor go_install github.com/j3ssie/metabigor
 
 log "Module 03 (Active): Recon tools complete."

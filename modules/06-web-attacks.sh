@@ -19,8 +19,8 @@ banner "Module 06: Web Application Attacks"
 section "Go Web Attack Tools"
 
 # dalfox checked early in case 03-recon-active already installed it
-ensure_cmd dalfox go_install github.com/hahwul/dalfox/v2/cmd/dalfox
-ensure_cmd byp4xx go_install github.com/lobuhi/byp4xx@latest
+ensure_cmd dalfox go_install github.com/hahwul/dalfox/v2
+ensure_cmd byp4xx go_install github.com/lobuhi/byp4xx
 ensure_cmd interactsh-client go_install github.com/projectdiscovery/interactsh/cmd/interactsh-client
 
 section "Python Web Attack Frameworks"
