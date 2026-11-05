@@ -22,7 +22,7 @@ EXPECTED_CMDS=(
   dnsrecon dnsenum fierce wafw00f arjun paramspider linkfinder secretfinder git-dumper dalfox metabigor photon
   
   # Windows / AD
-  impacket-secretsdump impacket-psexec impacket-wmiexec evil-winrm nxc kerbrute enum4linux-ng ldapdomaindump pypykatz bloodhound-python ligolo-proxy chisel pwncat
+  impacket-secretsdump impacket-psexec impacket-wmiexec evil-winrm nxc kerbrute enum4linux-ng ldapdomaindump pypykatz bloodhound-cli bloodhound-python ligolo-proxy chisel pwncat
   
   # Passwords
   hashcat john hydra fcrackzip haiti nth cewl cupp username-anarchy

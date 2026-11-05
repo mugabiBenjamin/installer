@@ -76,36 +76,30 @@ else
   warn "nxc already installed — skipping"
 fi
 
-section "BloodHound CE & Neo4j"
+section "BloodHound CE"
 
-if ! command -v neo4j >/dev/null 2>&1; then
-  log "Installing Neo4j (BloodHound backend)..."
-  wget -qO- https://debian.neo4j.com/neotechnology.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/neo4j.gpg || warn "Failed to import Neo4j GPG key"
-  echo "deb [signed-by=/usr/share/keyrings/neo4j.gpg] https://debian.neo4j.com stable latest" | sudo tee /etc/apt/sources.list.d/neo4j.list >/dev/null
-  sudo apt update -y >/dev/null 2>&1 || true
-  apt_install neo4j
-else
-  warn "neo4j already installed — skipping"
-fi
-
-if ! command -v bloodhound >/dev/null 2>&1; then
-  log "Installing BloodHound CE..."
-  BLOODHOUND_DIR="${TOOLS_DIR}/BloodHound"
-  BH_URL=$(fetch_latest_github_release "SpecterOps/BloodHound" "linux-amd64" "sha256\|arm")
-  if [ -n "${BH_URL:-}" ]; then
-    bh_zip="/tmp/BloodHound.zip"
-    register_tmp "${bh_zip}"
-    wget -q --show-progress -O "${bh_zip}" "${BH_URL}" \
-      && unzip -qo "${bh_zip}" -d "${BLOODHOUND_DIR}" \
-      && sudo chmod +x "${BLOODHOUND_DIR}"/BloodHound* \
-      && sudo ln -sf "${BLOODHOUND_DIR}/BloodHound" "${OSINT_BIN}/bloodhound" \
-      && log "BloodHound CE installed (${OSINT_BIN}/bloodhound)" \
-      || warn "BloodHound CE: download/unzip failed"
+if ! command -v bloodhound-cli >/dev/null 2>&1; then
+  log "Installing BloodHound CLI..."
+  BH_CLI_URL=$(fetch_latest_github_release "SpecterOps/bloodhound-cli" "bloodhound-cli-linux-amd64\.tar\.gz" "md5")
+  if [ -n "${BH_CLI_URL:-}" ]; then
+    bh_cli_tar="/tmp/bloodhound-cli.tar.gz"
+    bh_cli_dir="$(mktemp -d /tmp/bloodhound-cli.XXXXXX)" || bh_cli_dir=""
+    if [ -n "${bh_cli_dir}" ]; then
+      register_tmp "${bh_cli_tar}"
+      register_tmp "${bh_cli_dir}"
+      wget -q --show-progress -O "${bh_cli_tar}" "${BH_CLI_URL}" \
+        && tar -xzf "${bh_cli_tar}" -C "${bh_cli_dir}" \
+        && sudo install -m 0755 "${bh_cli_dir}/bloodhound-cli" "${OSINT_BIN}/bloodhound-cli" \
+        && log "BloodHound CLI installed (${OSINT_BIN}/bloodhound-cli)" \
+        || warn "BloodHound CLI: download/install failed"
+    else
+      warn "Failed to create temporary directory for BloodHound CLI"
+    fi
   else
-    warn "Could not resolve BloodHound CE release URL"
+    warn "Could not resolve BloodHound CLI release URL"
   fi
 else
-  warn "bloodhound already installed — skipping"
+  warn "bloodhound-cli already installed — skipping"
 fi
 
 ensure_cmd bloodhound-python uv_tool_install bloodhound-python bloodhound bloodhound-python
@@ -227,10 +221,9 @@ log "Module 04: Windows AD tools complete."
 echo ""
 echo "====================================================================="
 echo " ── BloodHound CE (first-run setup) ──────────────────────────────"
-echo "   1. Start Neo4j:   sudo neo4j start"
-echo "   2. Browse to:     http://localhost:7474  (default: neo4j / neo4j)"
-echo "   3. Change the default password"
-echo "   4. Launch BloodHound and connect to the Neo4j instance"
+echo "   1. Start the Docker stack: bloodhound-cli install"
+echo "   2. Browse to:              http://localhost:8080/ui/login"
+echo "   3. Read the initial admin password from: bloodhound-cli logs"
 echo "   Collect data: bloodhound-python -u <user> -p <pass> -d <domain> -c All"
 echo ""
 echo " ── Ligolo-ng (interface setup, run once) ────────────────────────"
