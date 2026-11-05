@@ -36,11 +36,29 @@ section "Rizin & Cutter"
 
 if ! command -v rizin >/dev/null 2>&1; then
   if ! sudo apt install -y rizin 2>/dev/null; then
-    RIZIN_URL=$(fetch_latest_github_release "rizinorg/rizin" "linux.*amd64\.deb")
+    command -v xz >/dev/null 2>&1 || apt_install xz-utils
+    RIZIN_URL=$(fetch_latest_github_release "rizinorg/rizin" "static-x86_64\.tar\.xz")
     if [ -n "${RIZIN_URL:-}" ]; then
-      local_rizin="/tmp/rizin.deb"
-      wget -q -O "${local_rizin}" "${RIZIN_URL}" && sudo dpkg -i "${local_rizin}" && sudo apt install -f -y || warn "Failed to install rizin deb"
-      rm -f "${local_rizin}"
+      RIZIN_DIR="${TOOLS_DIR}/rizin"
+      local_rizin="/tmp/rizin-static.tar.xz"
+      rizin_tmp="$(mktemp -d /tmp/rizin.XXXXXX)" || rizin_tmp=""
+      if [ -n "${rizin_tmp}" ]; then
+        register_tmp "${local_rizin}"
+        register_tmp "${rizin_tmp}"
+        if wget -q -O "${local_rizin}" "${RIZIN_URL}" \
+          && tar -xJf "${local_rizin}" -C "${rizin_tmp}" \
+          && sudo rm -rf "${RIZIN_DIR}" \
+          && sudo mv "${rizin_tmp}" "${RIZIN_DIR}" \
+          && sudo ln -sf "${RIZIN_DIR}/bin/rizin" "${OSINT_BIN}/rizin"; then
+          log "rizin installed (${OSINT_BIN}/rizin)"
+        else
+          warn "Failed to install rizin from static archive"
+        fi
+      else
+        warn "Failed to create temporary directory for rizin"
+      fi
+    else
+      warn "Could not resolve rizin release URL"
     fi
   fi
 else
