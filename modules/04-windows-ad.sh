@@ -202,6 +202,8 @@ from pwncat.__main__ import main
 sys.argv[0] = "pwncat"
 main()
 PY
+    # Replace any stale symlink left by older installer versions.
+    sudo rm -f "${OSINT_BIN}/pwncat"
     sudo tee "${OSINT_BIN}/pwncat" >/dev/null <<EOF
 #!/usr/bin/env bash
 exec "${PWNCAT_DIR}/.venv/bin/python" "${PWNCAT_DIR}/pwncat-import-shim.py" "\$@"
