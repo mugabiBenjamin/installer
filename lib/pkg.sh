@@ -48,6 +48,13 @@ gem_install() {
   if ! command -v gem >/dev/null 2>&1; then
     sudo apt install -y ruby ruby-dev build-essential 2>/dev/null || true
   fi
+  # Native gems such as readline-ext need a readline or libedit header.
+  if [ ! -f /usr/include/readline/readline.h ] && [ ! -f /usr/include/editline/readline.h ]; then
+    log "Installing readline headers for native Ruby gems..."
+    if ! sudo apt install -y libreadline-dev libedit-dev; then
+      warn "gem: could not install readline headers; native extensions may fail"
+    fi
+  fi
   sudo gem install "$pkg" && log "gem: $pkg installed" || warn "gem: failed to install $pkg"
 }
 
