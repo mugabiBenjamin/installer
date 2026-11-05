@@ -2,7 +2,9 @@
 # /opt/tools/installer/lib/trap.sh
 # Signal trap management and temporary file cleanup registry
 
-CLEANUP_FILES=()
+if [ -z "${CLEANUP_FILES+x}" ]; then
+  CLEANUP_FILES=()
+fi
 
 register_tmp() {
   CLEANUP_FILES+=("$1")

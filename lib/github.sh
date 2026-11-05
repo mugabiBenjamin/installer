@@ -2,6 +2,10 @@
 # /opt/tools/installer/lib/github.sh
 # GitHub API release queries and archive download/extraction primitives
 
+# Used by the download helpers below; source it here so modules that only
+# source lib/github.sh still have register_tmp available.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/trap.sh"
+
 fetch_latest_github_release() {
   local repo="$1" pattern="$2" exclude="${3:-__NO_EXCLUDE__}"
   local result
@@ -15,9 +19,19 @@ fetch_latest_github_release() {
 }
 
 download_binary() {
-  local url="$1" dest="$2"
+  local url="$1" dest="$2" tmp
+  tmp="$(mktemp "${TMPDIR:-/tmp}/download_binary.XXXXXX")" || {
+    warn "Failed to create a temporary file for ${dest}"
+    return 1
+  }
+  register_tmp "${tmp}"
   log "Downloading binary from ${url} to ${dest}..."
-  wget -q --show-progress -O "${dest}" "${url}" && sudo chmod +x "${dest}"
+  if wget -q --show-progress -O "${tmp}" "${url}"; then
+    sudo install -Dm755 "${tmp}" "${dest}"
+  else
+    warn "Failed to download ${url}"
+    return 1
+  fi
 }
 
 download_and_extract_tar() {
