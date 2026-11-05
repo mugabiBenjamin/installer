@@ -60,7 +60,7 @@ log "Installing build tools, headers, and bootstrap utilities..."
 BOOTSTRAP_PKGS=(
   build-essential curl wget git vim binutils htop gnupg tree plocate make
   python3-venv python3-dev
-  libxml2-dev libxslt1-dev libxslt-dev libffi-dev libssl-dev
+  libxml2-dev libxslt1-dev libffi-dev libssl-dev
   libgmp-dev libmpfr-dev libmpc-dev
   ruby ruby-dev
   rlwrap socat proxychains4
@@ -69,8 +69,9 @@ BOOTSTRAP_PKGS=(
 )
 
 for pkg in "${BOOTSTRAP_PKGS[@]}"; do
-  # Check if installed first to keep output clean and fast
-  if dpkg -l "$pkg" &>/dev/null; then
+  # dpkg -l succeeds for known-but-uninstalled packages (status "un"), so check
+  # the actual installation status instead.
+  if [ "$(dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null)" = "install ok installed" ]; then
     log "apt: $pkg already installed"
   else
     apt_install "$pkg"

@@ -4,7 +4,7 @@
 
 EXPECTED_CMDS=(
   # Bootstrap / utilities
-  vim objdump htop gpg tree tmux jq pandoc uv rlwrap socat proxychains4
+  vim objdump htop gpg tree tmux jq pandoc uv rlwrap socat proxychains4 download-mibs
   
   # Package managers
   brew cargo rustc go mamba
