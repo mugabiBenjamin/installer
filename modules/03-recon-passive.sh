@@ -7,6 +7,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${SCRIPT_DIR}/config/defaults.sh"
 source "${SCRIPT_DIR}/lib/log.sh"
+source "${SCRIPT_DIR}/lib/env.sh"
 source "${SCRIPT_DIR}/lib/pkg.sh"
 source "${SCRIPT_DIR}/lib/github.sh"
 source "${SCRIPT_DIR}/lib/git.sh"
@@ -120,38 +121,105 @@ ensure_cmd waybackurls go_install github.com/tomnomnom/waybackurls
 
 section "Configuration Templates"
 
-# theHarvester API keys template
+load_env "${SCRIPT_DIR}/.env"
+
+# theHarvester API keys
 HARVESTER_CONF_DIR="${HOME}/.theHarvester"
-if [ ! -f "${HARVESTER_CONF_DIR}/api-keys.yaml" ]; then
-  log "Dropping theHarvester api-keys.yaml template..."
+HARVESTER_CONF_FILE="${HARVESTER_CONF_DIR}/api-keys.yaml"
+if [ ! -f "${HARVESTER_CONF_FILE}" ]; then
+  log "Creating theHarvester api-keys.yaml from .env..."
   mkdir -p "${HARVESTER_CONF_DIR}"
-  cat << 'EOF' > "${HARVESTER_CONF_DIR}/api-keys.yaml"
-# theHarvester API keys template
+  (
+    umask 077
+    cat <<EOF > "${HARVESTER_CONF_FILE}"
+# Generated from .env by the installer. Edit .env instead of this file.
 apikeys:
-  shodan: ""
-  hunter: ""
-  securityTrails: ""
-  fullhunt: ""
+  shodan: "${SHODAN_API_KEY:-}"
+  hunter: "${HUNTER_API_KEY:-}"
+  securityTrails: "${SECURITYTRAILS_API_KEY:-}"
+  fullhunt: "${FULLHUNT_API_KEY:-}"
 EOF
+  )
+  chmod 600 "${HARVESTER_CONF_FILE}"
 else
-  log "theHarvester api-keys.yaml already exists — skipping template drop"
+  log "theHarvester api-keys.yaml already exists — preserving"
 fi
 
-# Amass Config template
+# Amass config
 AMASS_CONF_DIR="${HOME}/.config/amass"
-if [ ! -f "${AMASS_CONF_DIR}/config.ini" ]; then
-  log "Dropping Amass config.ini template..."
+AMASS_CONF_FILE="${AMASS_CONF_DIR}/config.ini"
+if [ ! -f "${AMASS_CONF_FILE}" ]; then
+  log "Creating Amass config.ini from .env..."
   mkdir -p "${AMASS_CONF_DIR}"
-  cat << 'EOF' > "${AMASS_CONF_DIR}/config.ini"
-# Amass basic API key template
-# [data_sources.Shodan]
-# apikey = ""
-# [data_sources.Censys]
-# apikey = ""
-# secret = ""
-EOF
+  (
+    umask 077
+    {
+      amass_has_creds=false
+      echo "# Generated from .env by the installer. Edit .env instead of this file."
+      if [ -n "${SHODAN_API_KEY:-}" ]; then
+        amass_has_creds=true
+        echo
+        echo "[data_sources.Shodan]"
+        echo "apikey = ${SHODAN_API_KEY}"
+      fi
+      if [ -n "${CENSYS_API_ID:-}" ] && [ -n "${CENSYS_API_SECRET:-}" ]; then
+        amass_has_creds=true
+        echo
+        echo "[data_sources.Censys]"
+        echo "apikey = ${CENSYS_API_ID}"
+        echo "secret = ${CENSYS_API_SECRET}"
+      fi
+      if [ "$amass_has_creds" = false ]; then
+        echo
+        echo "# No Amass credentials were found in .env."
+        echo "# Set SHODAN_API_KEY, CENSYS_API_ID, and CENSYS_API_SECRET, then remove this file and rerun."
+      fi
+    } > "${AMASS_CONF_FILE}"
+  )
+  chmod 600 "${AMASS_CONF_FILE}"
 else
-  log "Amass config.ini already exists — skipping template drop"
+  log "Amass config.ini already exists — preserving"
+fi
+
+# Shodan CLI
+if [ -n "${SHODAN_API_KEY:-}" ]; then
+  if [ -d "${HOME}/.shodan" ]; then
+    SHODAN_CONF_DIR="${HOME}/.shodan"
+  else
+    SHODAN_CONF_DIR="${HOME}/.config/shodan"
+  fi
+  SHODAN_KEY_FILE="${SHODAN_CONF_DIR}/api_key"
+  if [ ! -f "${SHODAN_KEY_FILE}" ]; then
+    log "Writing Shodan CLI API key from .env..."
+    mkdir -p "${SHODAN_CONF_DIR}"
+    (umask 077; printf '%s\n' "${SHODAN_API_KEY}" > "${SHODAN_KEY_FILE}")
+    chmod 600 "${SHODAN_KEY_FILE}"
+  else
+    log "Shodan CLI API key already exists — preserving"
+  fi
+fi
+
+# Censys CLI
+if [ -n "${CENSYS_API_ID:-}" ] || [ -n "${CENSYS_API_SECRET:-}" ] || [ -n "${CENSYS_ASM_API_KEY:-}" ]; then
+  CENSYS_CONF_DIR="${HOME}/.config/censys"
+  CENSYS_CONF_FILE="${CENSYS_CONF_DIR}/censys.cfg"
+  if [ ! -f "${CENSYS_CONF_FILE}" ]; then
+    log "Writing Censys CLI config from .env..."
+    mkdir -p "${CENSYS_CONF_DIR}"
+    (
+      umask 077
+      cat <<EOF > "${CENSYS_CONF_FILE}"
+[DEFAULT]
+api_id = ${CENSYS_API_ID:-}
+api_secret = ${CENSYS_API_SECRET:-}
+asm_api_key = ${CENSYS_ASM_API_KEY:-}
+color = auto
+EOF
+    )
+    chmod 600 "${CENSYS_CONF_FILE}"
+  else
+    log "Censys CLI config already exists — preserving"
+  fi
 fi
 
 log "Module 03 (Passive): Recon tools complete."
