@@ -19,7 +19,7 @@ section "OSINT CLI Utilities"
 
 ensure_cmd shodan uv_tool_install shodan shodan shodan
 ensure_cmd censys uv_tool_install censys censys censys
-ensure_cmd cloud_enum uv_tool_install cloud_enum cloud-enum cloud_enum
+ensure_cmd cloud_enum uv_tool_install cloud_enum "git+https://github.com/initstring/cloud_enum.git" cloud_enum
 ensure_cmd holehe uv_tool_install holehe holehe holehe
 ensure_cmd crosslinked uv_tool_install crosslinked crosslinked crosslinked
 

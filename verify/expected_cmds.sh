@@ -4,7 +4,7 @@
 
 EXPECTED_CMDS=(
   # Bootstrap / utilities
-  vim objdump htop gpg tree tmux jq pandoc uv rlwrap socat proxychains4
+  vim objdump htop gpg tree tmux jq pandoc uv rlwrap socat proxychains4 download-mibs
   
   # Package managers
   brew cargo rustc go mamba
@@ -16,19 +16,19 @@ EXPECTED_CMDS=(
   whatweb ffuf feroxbuster httpx nuclei dnsx katana kr sqlmap
   
   # Recon passive
-  shodan censys theHarvester spiderfoot recon-ng sherlock trufflehog assetfinder waybackurls holehe crosslinked
+  shodan censys cloud_enum theHarvester spiderfoot recon-ng sherlock trufflehog assetfinder waybackurls holehe crosslinked
   
   # Recon active
   dnsrecon dnsenum fierce wafw00f arjun paramspider linkfinder secretfinder git-dumper dalfox metabigor photon
   
   # Windows / AD
-  impacket-secretsdump impacket-psexec impacket-wmiexec evil-winrm nxc kerbrute enum4linux-ng ldapdomaindump pypykatz bloodhound-python ligolo-proxy chisel pwncat
+  impacket-secretsdump impacket-psexec impacket-wmiexec evil-winrm nxc kerbrute enum4linux-ng ldapdomaindump pypykatz bloodhound-cli bloodhound-python ligolo-proxy chisel pwncat
   
   # Passwords
   hashcat john hydra fcrackzip haiti nth cewl cupp username-anarchy
   
   # Wireless
-  aircrack-ng airodump-ng hcxtools hcxdumptool
+  aircrack-ng airodump-ng hcxpcapngtool hcxdumptool
   
   # Web attacks
   xsstrike jwt_tool commix byp4xx interactsh-client corscanner ghauri

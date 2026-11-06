@@ -21,19 +21,30 @@ banner "Module 04: Windows & Active Directory Attacks"
 
 section "Impacket"
 
-if ! command -v impacket-secretsdump >/dev/null 2>&1; then
+IMPACKET_CMDS=(impacket-secretsdump impacket-psexec impacket-wmiexec)
+impacket_ready=true
+for cmd in "${IMPACKET_CMDS[@]}"; do
+  command -v "$cmd" >/dev/null 2>&1 || impacket_ready=false
+done
+
+if [ "$impacket_ready" = false ]; then
   log "Installing Impacket..."
   IMPACKET_DIR="${TOOLS_DIR}/impacket"
   clone_or_update "https://github.com/fortra/impacket.git" "${IMPACKET_DIR}"
   if [ -d "${IMPACKET_DIR}" ]; then
     (
       cd "${IMPACKET_DIR}"
-      uv venv --clear .venv
-      uv pip install --python .venv/bin/python -e .
+      uv venv --clear .venv && uv pip install --python .venv/bin/python -e .
     ) && {
-      for script in "${IMPACKET_DIR}/.venv/bin/"impacket-*; do
+      # Upstream now installs scripts as psexec.py, wmiexec.py, etc. rather
+      # than the impacket-* names provided by the Debian package.
+      for script in "${IMPACKET_DIR}/.venv/bin/"*.py; do
         [ -x "$script" ] || continue
-        sudo ln -sf "$script" "${OSINT_BIN}/$(basename "$script")"
+        sudo ln -sf "$script" "${OSINT_BIN}/impacket-$(basename "$script" .py)"
+      done
+      hash -r
+      for cmd in "${IMPACKET_CMDS[@]}"; do
+        command -v "$cmd" >/dev/null 2>&1 || warn "Impacket: $cmd still missing"
       done
       log "Impacket installed — scripts symlinked to ${OSINT_BIN}"
     } || warn "Impacket: uv pip install failed"
@@ -65,36 +76,30 @@ else
   warn "nxc already installed — skipping"
 fi
 
-section "BloodHound CE & Neo4j"
+section "BloodHound CE"
 
-if ! command -v neo4j >/dev/null 2>&1; then
-  log "Installing Neo4j (BloodHound backend)..."
-  wget -qO- https://debian.neo4j.com/neotechnology.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/neo4j.gpg || warn "Failed to import Neo4j GPG key"
-  echo "deb [signed-by=/usr/share/keyrings/neo4j.gpg] https://debian.neo4j.com stable latest" | sudo tee /etc/apt/sources.list.d/neo4j.list >/dev/null
-  sudo apt update -y >/dev/null 2>&1 || true
-  apt_install neo4j
-else
-  warn "neo4j already installed — skipping"
-fi
-
-if ! command -v bloodhound >/dev/null 2>&1; then
-  log "Installing BloodHound CE..."
-  BLOODHOUND_DIR="${TOOLS_DIR}/BloodHound"
-  BH_URL=$(fetch_latest_github_release "SpecterOps/BloodHound" "linux-amd64" "sha256\|arm")
-  if [ -n "${BH_URL:-}" ]; then
-    bh_zip="/tmp/BloodHound.zip"
-    register_tmp "${bh_zip}"
-    wget -q --show-progress -O "${bh_zip}" "${BH_URL}" \
-      && unzip -qo "${bh_zip}" -d "${BLOODHOUND_DIR}" \
-      && sudo chmod +x "${BLOODHOUND_DIR}"/BloodHound* \
-      && sudo ln -sf "${BLOODHOUND_DIR}/BloodHound" "${OSINT_BIN}/bloodhound" \
-      && log "BloodHound CE installed (${OSINT_BIN}/bloodhound)" \
-      || warn "BloodHound CE: download/unzip failed"
+if ! command -v bloodhound-cli >/dev/null 2>&1; then
+  log "Installing BloodHound CLI..."
+  BH_CLI_URL=$(fetch_latest_github_release "SpecterOps/bloodhound-cli" "bloodhound-cli-linux-amd64\.tar\.gz" "md5")
+  if [ -n "${BH_CLI_URL:-}" ]; then
+    bh_cli_tar="/tmp/bloodhound-cli.tar.gz"
+    bh_cli_dir="$(mktemp -d /tmp/bloodhound-cli.XXXXXX)" || bh_cli_dir=""
+    if [ -n "${bh_cli_dir}" ]; then
+      register_tmp "${bh_cli_tar}"
+      register_tmp "${bh_cli_dir}"
+      wget -q --show-progress -O "${bh_cli_tar}" "${BH_CLI_URL}" \
+        && tar -xzf "${bh_cli_tar}" -C "${bh_cli_dir}" \
+        && sudo install -m 0755 "${bh_cli_dir}/bloodhound-cli" "${OSINT_BIN}/bloodhound-cli" \
+        && log "BloodHound CLI installed (${OSINT_BIN}/bloodhound-cli)" \
+        || warn "BloodHound CLI: download/install failed"
+    else
+      warn "Failed to create temporary directory for BloodHound CLI"
+    fi
   else
-    warn "Could not resolve BloodHound CE release URL"
+    warn "Could not resolve BloodHound CLI release URL"
   fi
 else
-  warn "bloodhound already installed — skipping"
+  warn "bloodhound-cli already installed — skipping"
 fi
 
 ensure_cmd bloodhound-python uv_tool_install bloodhound-python bloodhound bloodhound-python
@@ -183,7 +188,34 @@ fi
 
 section "Advanced Shell Handlers"
 
-ensure_cmd pwncat uv_tool_install pwncat-cs pwncat-cs pwncat
+if ! command -v pwncat >/dev/null 2>&1; then
+  uv_tool_install pwncat-cs pwncat-cs pwncat-cs pwncat-cs
+  PWNCAT_DIR="${TOOLS_DIR}/pwncat-cs"
+  # pwncat-cs 0.5.4 still imports pkg_resources, which needs the distutils
+  # shim from setuptools<81 and an explicit setuptools import on Python 3.12.
+  if uv pip install --python "${PWNCAT_DIR}/.venv/bin/python" 'setuptools<81'; then
+    cat > "${PWNCAT_DIR}/pwncat-import-shim.py" <<'PY'
+import sys
+import setuptools  # noqa: F401
+from pwncat.__main__ import main
+
+sys.argv[0] = "pwncat"
+main()
+PY
+    # Replace any stale symlink left by older installer versions.
+    sudo rm -f "${OSINT_BIN}/pwncat"
+    sudo tee "${OSINT_BIN}/pwncat" >/dev/null <<EOF
+#!/usr/bin/env bash
+exec "${PWNCAT_DIR}/.venv/bin/python" "${PWNCAT_DIR}/pwncat-import-shim.py" "\$@"
+EOF
+    sudo chmod +x "${OSINT_BIN}/pwncat"
+    log "pwncat installed (${OSINT_BIN}/pwncat)"
+  else
+    warn "pwncat: failed to install setuptools compatibility dependency"
+  fi
+else
+  warn "pwncat already installed — skipping"
+fi
 
 section "Post-Install Instructions"
 
@@ -191,10 +223,9 @@ log "Module 04: Windows AD tools complete."
 echo ""
 echo "====================================================================="
 echo " ── BloodHound CE (first-run setup) ──────────────────────────────"
-echo "   1. Start Neo4j:   sudo neo4j start"
-echo "   2. Browse to:     http://localhost:7474  (default: neo4j / neo4j)"
-echo "   3. Change the default password"
-echo "   4. Launch BloodHound and connect to the Neo4j instance"
+echo "   1. Start the Docker stack: bloodhound-cli install"
+echo "   2. Browse to:              http://localhost:8080/ui/login"
+echo "   3. Read the initial admin password from: bloodhound-cli logs"
 echo "   Collect data: bloodhound-python -u <user> -p <pass> -d <domain> -c All"
 echo ""
 echo " ── Ligolo-ng (interface setup, run once) ────────────────────────"

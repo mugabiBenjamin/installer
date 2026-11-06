@@ -17,8 +17,12 @@ install_git_uv_tool() {
   if [ -d "${dir}" ]; then
     (
       cd "${dir}"
-      uv venv --clear .venv
-      uv pip install --python .venv/bin/python -r "${req_file}"
+      uv venv --clear .venv || exit 1
+      # Some tools (cupp, commix) have no external requirements; skip the
+      # empty -r argument instead of letting uv fail.
+      if [ -n "${req_file}" ]; then
+        uv pip install --python .venv/bin/python -r "${req_file}"
+      fi
     ) && {
       sudo tee "${wrapper_dest}" >/dev/null <<EOF
 #!/usr/bin/env bash

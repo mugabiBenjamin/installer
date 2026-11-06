@@ -48,6 +48,13 @@ gem_install() {
   if ! command -v gem >/dev/null 2>&1; then
     sudo apt install -y ruby ruby-dev build-essential 2>/dev/null || true
   fi
+  # Native gems such as readline-ext need a readline or libedit header.
+  if [ ! -f /usr/include/readline/readline.h ] && [ ! -f /usr/include/editline/readline.h ]; then
+    log "Installing readline headers for native Ruby gems..."
+    if ! sudo apt install -y libreadline-dev libedit-dev; then
+      warn "gem: could not install readline headers; native extensions may fail"
+    fi
+  fi
   sudo gem install "$pkg" && log "gem: $pkg installed" || warn "gem: failed to install $pkg"
 }
 
@@ -61,11 +68,11 @@ mamba_install() {
 }
 
 uv_tool_install() {
-  local name="$1" pkg="$2" binary="$3"
+  local name="$1" pkg="$2" binary="$3" link_name="${4:-$3}"
   local tool_dir="${TOOLS_DIR}/${name}"
 
-  if command -v "${binary}" >/dev/null 2>&1; then
-    warn "${binary} already installed — skipping"
+  if command -v "${link_name}" >/dev/null 2>&1; then
+    warn "${link_name} already installed — skipping"
     return 0
   fi
 
@@ -80,8 +87,8 @@ uv_tool_install() {
 
   uv venv --clear "${tool_dir}/.venv" \
     && uv pip install --python "${tool_dir}/.venv/bin/python" "${pkg}" \
-    && sudo ln -sf "${tool_dir}/.venv/bin/${binary}" "${OSINT_BIN}/${binary}" \
-    && log "${name} installed (${OSINT_BIN}/${binary})" \
+    && sudo ln -sf "${tool_dir}/.venv/bin/${binary}" "${OSINT_BIN}/${link_name}" \
+    && log "${name} installed (${OSINT_BIN}/${link_name})" \
     || warn "${name}: uv install failed"
 }
 

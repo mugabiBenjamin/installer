@@ -23,7 +23,8 @@ ensure_cmd pdfcrack apt_install pdfcrack
 
 section "Hash Identification"
 
-ensure_cmd haiti uv_tool_install haiti haiti-hash haiti
+# haiti is distributed as the haiti-hash Ruby gem, not a PyPI package.
+ensure_cmd haiti gem_install haiti-hash
 ensure_cmd nth uv_tool_install name-that-hash name-that-hash nth
 
 section "Custom Wordlist Generation"
