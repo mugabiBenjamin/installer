@@ -32,6 +32,7 @@ Scripts are committed without the executable bit (`100644`), so invoke them with
 - `uv_tool_install <name> <pkg> <binary> [link_name]` checks the final link name for idempotency. Use the optional fourth argument when the virtualenv entry point and desired command name differ (for example `pwncat-cs` -> `pwncat`).
 - `install_git_uv_tool` skips `uv pip install -r` when the requirements path is empty. This supports stdlib-only scripts such as `cupp` and `commix`.
 - `gem_install` installs `libreadline-dev` and `libedit-dev` when neither readline header exists, so native gems such as `evil-winrm` can compile.
+- `lib/env.sh` provides `load_env <path>`, which parses `KEY=VALUE` lines without sourcing the file. Module 03 loads the repo-root `.env` for recon credentials, never logs values, and treats a missing `.env` as normal.
 
 ## Verification set
 
@@ -47,8 +48,9 @@ Scripts are committed without the executable bit (`100644`), so invoke them with
 - In modules, prefer `ensure_cmd <cmd> <installer> ...` with `apt_install`, `go_install`, `brew_install`, `cargo_install`, `uv_tool_install`, `gem_install`, or `mamba_install`; these implement the idempotency checks.
 - Use `banner`/`section`/`log`/`warn`/`err` from `lib/log.sh` (`err` exits 1). Register temporary files with `register_tmp` from `lib/trap.sh` so cleanup runs.
 - `fetch_latest_github_release <owner/repo> <include-regex> [exclude-regex]` returns empty on failure; always guard with `[ -n "$URL" ]`.
+- Keep real credentials in `.env` (gitignored); commit only `.example.env` with empty placeholders. Never echo or log credential values.
 - Git history uses imperative, capitalized subjects (e.g. "Add installation logic for ..."), `feat/<area>` branches, and PR merges.
-- Do not commit `repomix-output.xml`, `install-*.log`, `*.log`, or local `AGENTS.local.md` files; they are gitignored.
+- Do not commit `repomix-output.xml`, `install-*.log`, `*.log`, `.env`, or local `AGENTS.local.md` files; they are gitignored.
 - Keep per-directory agent instructions in nested `AGENTS.md` files when they apply to a subtree (`lib/AGENTS.md`, `modules/AGENTS.md`). Use `AGENTS.local.md` for machine-specific overrides.
 
 ## Module-specific notes
@@ -60,6 +62,7 @@ Scripts are committed without the executable bit (`100644`), so invoke them with
 - BloodHound CE is installed as `bloodhound-cli` and runs as a Docker stack. Do not re-add a standalone `bloodhound` binary download; BloodHound CE releases have no binary assets. Do not install host Neo4j for CE unless a separate legacy setup needs it.
 - Rubeus has no compiled GhostPack release asset. The fallback downloads the community-maintained SharpCollection build.
 - Rizin packages are not available in the target Ubuntu release; install the static x86_64 release archive under `${TOOLS_DIR}/rizin`.
+- Recon credentials are read from `.env`; module 03 writes theHarvester, Amass, Shodan, and Censys config files only when absent and preserves existing files.
 - `hcxtools` provides `hcxpcapngtool`, `hcxhashtool`, and related binaries, not a single `hcxtools` command.
 
 ## Repository hygiene and safety
@@ -72,6 +75,7 @@ This repo installs offensive-security tooling and may be shared publicly. `AGENT
 - Personal notes, client names, or TODOs naming real people or engagements.
 - Private wrappers, payloads, or tool lists that are not already public.
 - Real `install-*.log` contents. Logs are machine-specific and must stay gitignored.
+- Real `.env` contents. `.env` is local-only; `.example.env` is the tracked template. Do not put real keys in docs, examples, or generated config templates.
 
 The canonical `/opt/tools/...` paths are intentional project paths; keep them only where `config/defaults.sh` requires them. Use `AGENTS.local.md` for machine-specific overrides and keep it gitignored.
 
@@ -79,7 +83,8 @@ A quick starting scan (review every match; this is not a substitute for judgment
 
 ```bash
 grep -RInE '(/home/|/Users/|api[_-]?key|secret|token|BEGIN .*PRIVATE KEY)' \
-  --exclude-dir=.git --exclude='*.log' --exclude='repomix-output.xml' .
+  --exclude-dir=.git --exclude='.env' --exclude='.env.*' \
+  --exclude='*.log' --exclude='repomix-output.xml' .
 ```
 
 If a secret is committed, remove it, rotate it, and rewrite history if necessary. Deleting it in a later commit is not enough.
