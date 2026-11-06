@@ -4,3 +4,6 @@ install-*.log
 AGENTS.local.md
 .cache/
 verify/*.log
+.env
+.env.*
+!.example.env
