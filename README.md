@@ -1,102 +1,57 @@
-# Modular CTF & Penetration Testing Tool Installer Framework
+# Modular CTF & Penetration Testing Tool Installer
 
 A modular, idempotent Bash framework for provisioning a Debian/Ubuntu host with CTF and penetration-testing tooling.
 
-> **Project status:** the module layer is implemented and runnable, but some orchestration wiring is still manual. Read [Current wiring status](#current-wiring-status) before your first full run.
-
-## Contents
-
-- [Modular CTF \& Penetration Testing Tool Installer Framework](#modular-ctf--penetration-testing-tool-installer-framework)
-  - [Contents](#contents)
-  - [Overview](#overview)
-  - [Features](#features)
-  - [Requirements](#requirements)
-  - [Quick start](#quick-start)
-  - [Secrets and environment variables](#secrets-and-environment-variables)
-  - [Installing on an existing machine](#installing-on-an-existing-machine)
-    - [1. Inventory what is already present](#1-inventory-what-is-already-present)
-    - [2. Source existing PATH settings first](#2-source-existing-path-settings-first)
-    - [3. Run only the managers you need](#3-run-only-the-managers-you-need)
-    - [4. Do not run the full bootstrap blindly](#4-do-not-run-the-full-bootstrap-blindly)
-    - [5. Check for directory and PATH conflicts](#5-check-for-directory-and-path-conflicts)
-    - [6. Run only missing categories or modules](#6-run-only-missing-categories-or-modules)
-    - [7. Know what idempotency covers](#7-know-what-idempotency-covers)
-  - [How the installer works](#how-the-installer-works)
-  - [Categories and modules](#categories-and-modules)
-  - [Toolchain managers](#toolchain-managers)
-  - [CLI reference](#cli-reference)
-  - [Verification](#verification)
-  - [Current wiring status](#current-wiring-status)
-  - [Extending the framework](#extending-the-framework)
-    - [Add a module](#add-a-module)
-    - [Add a tool to an existing module](#add-a-tool-to-an-existing-module)
-  - [Troubleshooting](#troubleshooting)
-  - [Conventions](#conventions)
-  - [Security notice](#security-notice)
+> **Status:** the module layer is implemented and runnable, but some orchestration is still manual. Read [Wiring status](#wiring-status) before your first full run.
 
 ## Overview
-
-The installer is organized as a pipeline:
 
 ```text
 install.sh
   -> config/        paths, flags, category-to-module mapping
   -> modules/       one script per tool category
   -> lib/           logging, package wrappers, git/GitHub helpers, PATH, traps
-  -> managers/      Go, Homebrew, uv, Rust, Mamba, and Ruby bootstrap scripts
+  -> managers/      Go, Homebrew, uv, Rust, Mamba, and Ruby bootstraps
   -> verify/        expected-binary list and verification runner
 ```
 
-Each module is standalone and can be run directly. Most install steps are guarded by `command -v` or directory checks, so re-running a module is generally safe.
+Each module is standalone (`bash modules/08-passwords.sh`) and guarded by `command -v` or directory checks, so re-runs are generally safe. `install.sh` expands the selected categories through `CATEGORY_MAP`, runs each module in a child `bash`, records non-zero exits, then runs verification. It exits non-zero only when a module failed.
 
 ## Features
 
-- **Category-based installation** - install everything, a subset (`--only`), or everything except selected categories (`--skip`).
-- **Idempotent guards** - `ensure_cmd` checks for an existing binary before invoking an installer.
-- **Multiple package sources** - APT, Homebrew, Go, uv, Cargo, Mamba, RubyGems, and direct GitHub release downloads.
-- **Isolated Python tooling** - Python tools get their own uv-managed virtual environments instead of modifying the system Python.
-- **PATH persistence** - manager scripts write to `/etc/profile.d/ctf-tools.sh` so toolchains survive new shells.
-- **Environment-based credentials** - recon API keys are read from a gitignored `.env` file instead of being embedded in tracked templates.
-- **Post-install verification** - `verify/verify.sh` checks a curated list of expected binaries.
-- **Failure isolation** - the orchestrator runs every selected module, records failures, and reports them at the end.
-- **Temporary-file cleanup** - `lib/trap.sh` provides a temporary-file registry and an exit/interrupt cleanup trap for modules that source it.
+- **Category-based installs** - everything, a subset (`--only`), or everything except selected categories (`--skip`).
+- **Idempotent guards** - `ensure_cmd` skips a tool that already exists.
+- **Multiple sources** - APT, Homebrew, Go, uv, Cargo, Mamba, RubyGems, and GitHub releases.
+- **Isolated Python tooling** - uv-managed virtualenvs instead of the system Python.
+- **Persistent PATH** - manager scripts append to `/etc/profile.d/ctf-tools.sh`.
+- **Credentials from `.env`** - recon API keys are never embedded in tracked files.
+- **Post-install verification** and temporary-file cleanup.
 
 ## Requirements
 
-- Debian or Ubuntu (tested on Ubuntu 26.04.1 LTS).
-- `x86_64`: several download patterns hard-code `amd64` artifacts.
-- Bash 4 or newer (the category map uses associative arrays).
-- A non-root user with working `sudo` access.
-- `git` available before cloning the repository.
-- `unzip` for modules that extract GitHub archives; the bootstrap package list does not currently include it.
-- An internet connection.
-- Enough disk space for heavy components such as Ghidra, Havoc, SageMath, SecLists, and BloodHound CE.
+- Debian or Ubuntu (tested on Ubuntu 26.04.1 LTS), `x86_64` (several downloads hard-code `amd64`).
+- Bash 4+, `git`, `unzip`, internet access.
+- Disk space for Ghidra, Havoc, SageMath, SecLists, and BloodHound CE.
+- A non-root user with working `sudo`.
 
-> Run the framework as a normal sudo-capable user, not as root. The scripts call `sudo` internally and use `$USER`/`$HOME` for ownership and user-level installs. Running `sudo bash install.sh` makes those values point at root and produces the wrong ownership and paths.
+> Run as a normal sudo-capable user, **not** with `sudo bash install.sh`. Modules call `sudo` internally and use `$USER`/`$HOME`; running as root produces wrong ownership and paths.
 
 ## Quick start
 
-The repository is expected to live at `/opt/tools/installer`; paths in `config/defaults.sh` are hard-coded to that location.
+The repository must live at `/opt/tools/installer`; paths in `config/defaults.sh` are hard-coded.
 
 ```bash
-# The orchestrator expects this exact location, and /opt is normally root-owned.
-sudo mkdir -p /opt/tools
-sudo chown "$USER":"$USER" /opt/tools
+sudo mkdir -p /opt/tools && sudo chown "$USER":"$USER" /opt/tools
 git clone https://github.com/mugabiBenjamin/installer.git /opt/tools/installer
 cd /opt/tools/installer
 
-# Optional: create a local .env for recon API keys.
-# Fill in only the services you use; leave the rest empty.
-cp .example.env .env
-chmod 600 .env
-$EDITOR .env
+# Optional: recon API keys (see Secrets and environment variables).
+cp .example.env .env && chmod 600 .env && $EDITOR .env
 
-# 1. Create directories and install base APT dependencies.
-#    Module 00 is not run automatically by install.sh.
+# 1. Base system - NOT run by install.sh.
 bash modules/00-bootstrap.sh
 
-# 2. Install the toolchains you need (see Toolchain managers).
-#    install.sh does not install these automatically.
+# 2. Toolchains - NOT installed by install.sh; run the ones you need.
 bash managers/golang.sh
 bash managers/uv.sh
 bash managers/rust.sh
@@ -104,163 +59,36 @@ bash managers/homebrew.sh
 bash managers/mamba.sh
 bash managers/ruby.sh
 
-# 3. Load the PATH changes persisted by the managers.
-#    A new login shell works too.
+# 3. Load the persisted PATH (or open a new login shell).
 source /etc/profile.d/ctf-tools.sh
 
-# 4. Run the default category set (C2 is excluded by default).
+# 4. Default categories (C2 is excluded).
 bash install.sh
 
 # 5. Check which expected binaries are present.
 bash verify/verify.sh
 ```
 
-Run a focused installation instead:
+Focused runs:
 
 ```bash
 bash install.sh --only web,passwords
-bash install.sh --skip windows,wireless
+bash install.sh --skip windows,wireless,re
+bash modules/08-passwords.sh    # standalone module
 ```
-
-Individual modules can also be run directly, for example `bash modules/08-passwords.sh`.
 
 Scripts are committed without the executable bit (`100644`), so invoke them with `bash` rather than `./install.sh`.
 
-On a machine that already has some toolchains or tools, use the flow in [Installing on an existing machine](#installing-on-an-existing-machine) rather than running the quick start wholesale.
-
 ## Secrets and environment variables
 
-The generated files are:
+Recon credentials are read from a gitignored repository-root `.env`; commit only `.example.env`. Generated config files are:
 
 - theHarvester: `~/.theHarvester/api-keys.yaml`
 - Amass: `~/.config/amass/config.ini`
 - Shodan CLI: `~/.config/shodan/api_key` (or `~/.shodan/api_key` if that directory already exists)
 - Censys CLI: `~/.config/censys/censys.cfg`
 
-Existing configuration files are preserved. To regenerate one from `.env`, move or remove the existing file and rerun `bash modules/03-recon-passive.sh`. The installer never logs credential values and sets generated files to mode `600`.
-
-## Installing on an existing machine
-
-The same code paths apply, but an existing host needs more inventory and less blind execution. The main risks are:
-
-- installing a second copy of a toolchain that is present but not on `PATH`
-- letting `00-bootstrap.sh` run a blanket `apt upgrade`
-- changing ownership of existing tool directories
-- treating a non-empty but invalid directory as a valid installation
-
-### 1. Inventory what is already present
-
-```bash
-bash verify/verify.sh || true
-
-for c in go brew uv cargo ruby gem mamba; do
-  printf '%-6s ' "$c"
-  command -v "$c" || echo MISSING
-done
-
-type -a go brew uv cargo ruby gem mamba 2>/dev/null
-
-ls -la /opt/tools \
-       /usr/share/seclists \
-       /usr/share/payloadsallthethings \
-       /usr/share/wordlists
-```
-
-`verify/verify.sh` checks the global expected list and exits non-zero when anything is missing, so `|| true` keeps the shell moving.
-
-### 2. Source existing PATH settings first
-
-```bash
-source /etc/profile.d/ctf-tools.sh 2>/dev/null || true
-```
-
-If a toolchain exists outside the default paths, add it to `PATH` before running modules. `ensure_cmd` only checks whether the command is visible; an off-PATH Go, uv, or Cargo installation is treated as missing.
-
-### 3. Run only the managers you need
-
-- Toolchain present and on `PATH`: skip its manager.
-- Toolchain present but not on `PATH`: source or add its path; do not reinstall it.
-- Toolchain missing: run its manager.
-- Toolchain present but outdated: `ensure_cmd` still skips it. Upgrade it manually or remove the old binary first.
-
-### 4. Do not run the full bootstrap blindly
-
-`modules/00-bootstrap.sh` runs `sudo apt upgrade -y` and recursively changes ownership of `/opt/tools`, `/usr/share/wordlists`, `/usr/share/seclists`, and `/usr/share/payloadsallthethings`.
-
-If that is not acceptable, comment out the upgrade or prepare the directories manually:
-
-```bash
-sudo mkdir -p /opt/tools \
-              /usr/share/seclists \
-              /usr/share/payloadsallthethings \
-              /opt/tools/post-exploit/linux \
-              /opt/tools/post-exploit/windows
-
-sudo chown -R "$USER":"$USER" \
-  /opt/tools \
-  /usr/share/seclists \
-  /usr/share/payloadsallthethings \
-  /usr/share/wordlists
-```
-
-Then install only the base packages you actually need.
-
-### 5. Check for directory and PATH conflicts
-
-- `clone_or_update` expects a real `.git` directory. A non-empty directory without `.git` can block a clone.
-- `12-wordlists.sh` only checks whether SecLists and PayloadsAllTheThings are non-empty. A partial or unrelated directory is treated as installed.
-- Modules that create wrappers or symlinks use `ln -sf`; inspect `/usr/local/bin` for custom links that could be replaced.
-- Existing `~/.tmux.conf`, `~/.vimrc`, theHarvester API keys, Amass config, Shodan API key, and Censys config are preserved because they are only created when absent. Put new values in `.env`; existing tool configs are not overwritten.
-- Check which binary wins when PATH precedence matters:
-
-  ```bash
-  type -a <command>
-  ```
-
-### 6. Run only missing categories or modules
-
-```bash
-bash install.sh --only passwords,wordlists
-bash install.sh --only web,recon
-bash install.sh --skip windows,wireless,re
-```
-
-For tighter control, run individual modules:
-
-```bash
-bash modules/08-passwords.sh
-bash modules/12-wordlists.sh
-```
-
-`install.sh` always runs the global verification step at the end, even with `--only` or `--skip`, so expect unrelated missing-binary warnings.
-
-### 7. Know what idempotency covers
-
-- `ensure_cmd` skips an existing command regardless of its version.
-- `clone_or_update` pulls existing Git repositories.
-- APT-based package loops can be re-run safely.
-- Some wrapper and symlink modules overwrite their generated wrappers on re-run.
-- A skipped tool is not necessarily the version you want; check it manually.
-
-Verify after each batch:
-
-```bash
-bash verify/verify.sh
-```
-
-## How the installer works
-
-`install.sh` performs the following steps:
-
-1. Sources `config/defaults.sh`, `config/categories.sh`, `lib/log.sh`, and `lib/trap.sh`.
-2. Parses `--only`, `--skip`, `--minimal`, `--no-ghidra`, and `--no-pwndbg`.
-3. Resolves the active category list. If `--only` is present it wins; otherwise `ALL_CATEGORIES` is used minus any `--skip` entries.
-4. Expands each category through `CATEGORY_MAP` into an ordered list of module files.
-5. Runs each module with `bash <module>` in a child process, recording non-zero exits.
-6. Runs `verify/verify.sh` as an advisory final check.
-7. Exits non-zero only when a module returned a non-zero status.
-
-Modules are executed in category order, and categories that map to multiple modules preserve their listed order (`recon` runs passive then active; `postexploit` runs Linux then Windows).
+Existing configs are preserved. To regenerate one, move or remove it and rerun `bash modules/03-recon-passive.sh`. Credential values are never logged, and generated files are mode `600`.
 
 ## Categories and modules
 
@@ -283,11 +111,11 @@ Modules are executed in category order, and categories that map to multiple modu
 | `mamba`       | `15-mamba-tools.sh`                                    | SageMath                                                                                                                                                                                                                                                     |
 | `gem`         | `16-gem-tools.sh`                                      | zsteg, one_gadget, evil-winrm                                                                                                                                                                                                                                |
 
-`modules/00-bootstrap.sh` is a base-system module, but it is not currently listed in `CATEGORY_MAP`; run it manually (see [Current wiring status](#current-wiring-status)).
+`modules/00-bootstrap.sh` is a base-system module but is not in `CATEGORY_MAP`; run it manually.
 
 ## Toolchain managers
 
-Manager scripts bootstrap the toolchains used by modules. They are standalone: run the script directly to install, or source it to use its functions.
+Managers bootstrap the toolchains used by modules. They are standalone: run the script to install, or source it to use its functions.
 
 | Script                 | Installs                                 | Persisted path                      |
 | ---------------------- | ---------------------------------------- | ----------------------------------- |
@@ -298,18 +126,7 @@ Manager scripts bootstrap the toolchains used by modules. They are standalone: r
 | `managers/mamba.sh`    | Miniforge/Mamba                          | `/opt/miniforge3/bin`               |
 | `managers/ruby.sh`     | Ruby, RubyGems                           | user gem bin directory              |
 
-Run the managers before modules that depend on them:
-
-```bash
-bash managers/golang.sh
-bash managers/uv.sh
-bash managers/rust.sh
-bash managers/homebrew.sh
-bash managers/mamba.sh
-bash managers/ruby.sh
-```
-
-Each manager appends its environment setup to `/etc/profile.d/ctf-tools.sh`. That file is not sourced automatically by an already-running shell, so `source` it or open a new login shell before running modules. If a manager writes to a system prefix, make sure that prefix is writable by the target user; do not run a whole manager as root just to satisfy one path.
+Each manager appends to `/etc/profile.d/ctf-tools.sh`; an already-running shell does not pick that up, so `source` it or open a new login shell before running modules. If a manager writes to a system prefix, make that prefix writable by the target user rather than running the whole manager as root.
 
 ## CLI reference
 
@@ -326,40 +143,56 @@ bash install.sh [--only <categories>] [--skip <categories>]
 | `--no-ghidra`        | Parsed, not enforced | Assigns a shell variable that module 11 does not receive.        |
 | `--no-pwndbg`        | Parsed, not enforced | Assigns a shell variable that module 11 does not receive.        |
 
-Valid categories are the left-hand column of [Categories and modules](#categories-and-modules). C2 is intentionally absent from `ALL_CATEGORIES`; use `bash install.sh --only c2` to install it.
+Valid categories are the left-hand column of [Categories and modules](#categories-and-modules). C2 is intentionally absent from `ALL_CATEGORIES`; use `bash install.sh --only c2`.
 
 ## Verification
 
-`verify/verify.sh` checks every command listed in `verify/expected_cmds.sh` with `command -v` and exits non-zero if anything is missing.
+`verify/verify.sh` checks every command in `verify/expected_cmds.sh` with `command -v` and exits non-zero if anything is missing.
 
-```bash
-bash verify/verify.sh
-```
+- Verification is global; `--category` is parsed but ignored.
+- `install.sh` runs it after every install, including `--only`/`--skip`, but downgrades failures to warnings. A partial install can exit 0 while reporting missing binaries.
+- The expected list is a target, not a guarantee. Some entries (for example `tmux`, `jq`, `pandoc`) are not installed by any module.
 
-Important details:
+## Wiring status
 
-- Verification is global. `--category` is accepted by the argument parser but ignored.
-- `install.sh` runs verification at the end of every install, including `--only` and `--skip` runs. A verification failure is downgraded to a warning there, so a partial install can finish with exit status 0 while reporting missing binaries.
-- `verify/expected_cmds.sh` is a target list, not a guarantee that a module installs every entry. Some expected binaries are not currently installed by any module (for example `tmux`, `jq`, and `pandoc`).
-
-## Current wiring status
-
-These behaviors are verified against the current scripts and are easy to miss:
+These behaviors are easy to miss:
 
 - `modules/00-bootstrap.sh` is not in `CATEGORY_MAP`, so `install.sh` never runs it. Run it manually on a fresh host.
-- `install.sh` does not call the manager installers. Sourcing `managers/*.sh` only defines functions; it does not install Go, uv, Rust, Homebrew, Mamba, or Ruby. Modules that need a missing toolchain warn and return success without installing anything.
-- `--no-ghidra`, `--no-pwndbg`, and `--minimal` are parsed but not currently enforced.
-- Modules run in child `bash` processes. PATH changes and exports do not carry from one module to the next; only `/etc/profile.d/ctf-tools.sh` persists across shells.
-- `modules/03-recon-passive.sh` loads the repository-root `.env` when present and writes recon credentials only when the target config file is absent. Existing configs are intentionally preserved.
-- `config/defaults.sh` hard-codes `/opt/tools/installer`, `/opt/tools`, and system paths. Moving the repository requires editing that file.
-- Scripts use `set -uo pipefail` but not `set -e`. Most helpers convert failures into warnings and return 0, so exit status alone is not proof that a tool installed. Inspect the log output and run verification.
-- `config/versions.sh` exists but is not sourced anywhere; its pins are currently inert.
+- `install.sh` does not call the manager installers. Sourcing `managers/*.sh` only defines functions. Modules that need a missing toolchain warn and return success without installing anything.
+- `--minimal`, `--no-ghidra`, and `--no-pwndbg` are parsed but not currently enforced.
+- Modules run in child `bash` processes, so PATH changes and exports do not carry between modules. Only `/etc/profile.d/ctf-tools.sh` persists across shells.
+- `modules/03-recon-passive.sh` loads the repo-root `.env` when present and writes credentials only when the target config file is absent.
+- `config/defaults.sh` hard-codes `/opt/tools/installer`, `/opt/tools`, and system paths. Moving the repository requires editing it.
+- Scripts use `set -uo pipefail` but not `set -e`; most helpers turn failures into warnings and return 0. Exit status alone is not proof that a tool installed - inspect the log and run verification.
+- `config/versions.sh` exists but is never sourced; its pins are inert.
+
+## Installing on an existing machine
+
+```bash
+bash verify/verify.sh || true
+
+for c in go brew uv cargo ruby gem mamba; do
+  printf '%-6s ' "$c"
+  command -v "$c" || echo MISSING
+done
+
+source /etc/profile.d/ctf-tools.sh 2>/dev/null || true
+type -a go brew uv cargo ruby gem mamba 2>/dev/null
+```
+
+Then keep these risks in mind:
+
+- **Toolchains off `PATH` count as missing.** `ensure_cmd` only checks visible commands, so add an existing toolchain to `PATH` instead of reinstalling it. Present but outdated tools are still skipped.
+- **Do not run the full bootstrap blindly.** It performs `sudo apt upgrade -y` and recursively chowns `/opt/tools`, `/usr/share/wordlists`, `/usr/share/seclists`, and `/usr/share/payloadsallthethings`. If that is unwanted, prepare the directories manually and install only the base packages you need.
+- **Directory and symlink conflicts.** `clone_or_update` needs a real `.git` directory, a non-empty non-git directory can block a clone, and the wordlist module treats any non-empty SecLists/PayloadsAllTheThings directory as installed. Wrappers and symlinks use `ln -sf` in `/usr/local/bin`.
+- **Existing configs are preserved.** `~/.tmux.conf`, `~/.vimrc`, and recon tool configs are only created when absent; put new values in `.env`. Check `type -a <command>` when PATH precedence matters.
+- **Idempotency is shallow.** Existing commands are skipped regardless of version, and some wrapper modules rewrite their generated files on re-run. Run `bash verify/verify.sh` after each batch.
 
 ## Extending the framework
 
 ### Add a module
 
-1. Create `modules/NN-name.sh` using the existing module pattern:
+1. Create `modules/NN-name.sh`:
 
    ```bash
    #!/usr/bin/env bash
@@ -377,21 +210,13 @@ These behaviors are verified against the current scripts and are easy to miss:
    log "Module NN complete."
    ```
 
-2. Register the file in `config/categories.sh`:
-   - Add it to `CATEGORY_MAP` under the appropriate category.
-   - Add the category to `ALL_CATEGORIES` if it should run by default.
-
+2. Register it in `config/categories.sh`: add the file to `CATEGORY_MAP`, and add the category to `ALL_CATEGORIES` if it should run by default.
 3. Add every expected binary to `verify/expected_cmds.sh`.
-
-4. Check syntax:
-
-   ```bash
-   bash -n install.sh config/*.sh lib/*.sh managers/*.sh modules/*.sh verify/*.sh
-   ```
+4. Check syntax with `bash -n install.sh config/*.sh lib/*.sh managers/*.sh modules/*.sh verify/*.sh`.
 
 ### Add a tool to an existing module
 
-Use the idempotent wrappers rather than calling package managers directly:
+Prefer the idempotent wrappers over calling package managers directly:
 
 ```bash
 ensure_cmd <binary> apt_install <package>
@@ -403,37 +228,30 @@ ensure_cmd <binary> gem_install <gem>
 ensure_cmd <binary> mamba_install <package> [channel]
 ```
 
-Use `fetch_latest_github_release <owner/repo> <include-regex> [exclude-regex]` for release assets. It returns an empty string on failure, so guard the result with `[ -n "$URL" ]`. Register downloaded archives with `register_tmp` after sourcing `lib/trap.sh` so they are cleaned up.
+Use `fetch_latest_github_release <owner/repo> <include-regex> [exclude-regex]` for release assets; it returns empty on failure, so guard with `[ -n "$URL" ]`. Source `lib/trap.sh` and use `register_tmp` for downloaded archives.
 
 ## Troubleshooting
 
-| Symptom                                           | Likely cause and fix                                                                                                                         |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `./install.sh: Permission denied`                 | Scripts are stored without the executable bit. Run `bash install.sh`.                                                                        |
-| `go`, `uv`, `cargo`, `brew`, or `mamba` not found | Run the corresponding manager, then `source /etc/profile.d/ctf-tools.sh` or open a new login shell.                                          |
-| A module reports success but tools are missing    | The required toolchain was unavailable; wrappers warn and return 0. Install the manager and re-run the module.                               |
-| `verify.sh` reports many missing binaries         | Expected; verification is global and includes tools not installed by every category. Compare against the categories you actually ran.        |
-| `--no-ghidra` or `--no-pwndbg` has no effect      | These flags are not currently wired through to module 11. Edit `config/defaults.sh` or run `--only` without the `re` category.               |
-| Wireshark cannot capture as a normal user         | Group membership changes require a logout/login (or a new session) before they apply.                                                        |
-| apt packages fail to install                      | Check network access and whether the package exists for your distribution; modules log a warning and continue.                               |
-| An existing tool is skipped                       | That is the idempotency guard working. Remove the binary or directory only if you intend to reinstall it.                                    |
-| Recon API keys are not applied                    | Existing tool configs are preserved. Edit `.env`, then move or remove the relevant config file and rerun `bash modules/03-recon-passive.sh`. |
-| Re-running the installer                          | Safe in most cases because modules check for existing commands, repositories, and files first.                                               |
+| Symptom                                           | Cause and fix                                                                                                          |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `./install.sh: Permission denied`                 | Scripts have no executable bit. Run `bash install.sh`.                                                                 |
+| `go`, `uv`, `cargo`, `brew`, or `mamba` not found | Run the matching manager, then `source /etc/profile.d/ctf-tools.sh` or open a new login shell.                         |
+| Module succeeds but tools are missing             | A required toolchain was unavailable; wrappers warn and return 0. Install the manager and re-run the module.           |
+| `verify.sh` reports many missing binaries         | Expected: verification is global and includes tools from categories you did not run.                                   |
+| `--no-ghidra` / `--no-pwndbg` has no effect       | Not wired through to module 11. Edit `config/defaults.sh` or skip the `re` category.                                   |
+| Wireshark cannot capture as a normal user         | Group changes need a logout/login or new session.                                                                      |
+| An existing tool is skipped                       | The idempotency guard. Remove the binary or directory only if you intend to reinstall it.                              |
+| Recon API keys are not applied                    | Existing configs are preserved. Edit `.env`, remove the relevant config, and rerun `bash modules/03-recon-passive.sh`. |
 
 ## Conventions
 
-- Keep scripts Bash-only and start them with `set -uo pipefail`.
-- Resolve paths from `BASH_SOURCE`, not the caller's working directory.
-- Use `banner`, `section`, `log`, `warn`, and `err` from `lib/log.sh` instead of raw `echo` for status output.
-- Prefer the wrappers in `lib/pkg.sh` so new tools remain idempotent and skippable.
-- Register temporary files with `register_tmp` and source `lib/trap.sh` where cleanup is needed.
-- Keep real credentials in `.env` (gitignored); commit only `.example.env` with empty placeholders. Never echo or log credential values.
+- Bash only; start scripts with `set -uo pipefail` and resolve paths from `BASH_SOURCE`.
+- Use `banner`, `section`, `log`, `warn`, and `err` from `lib/log.sh` instead of raw `echo`.
+- Prefer `lib/pkg.sh` wrappers so tools stay idempotent; register temp files with `register_tmp`.
+- Keep real credentials in `.env` (gitignored) and commit only `.example.env`. Never log credential values.
 - Git history uses imperative, capitalized subjects, `feat/<area>` branches, and pull-request merges.
-- Do not commit `repomix-output.xml`; it is generated output and already gitignored.
-- There is no automated test suite or CI. Use `bash -n` for syntax checks and `verify/verify.sh` for installed-binary checks.
+- Do not commit `repomix-output.xml` or logs. There is no CI: use `bash -n` for syntax and `verify/verify.sh` for binaries.
 
 ## Security notice
 
-This project installs offensive security tooling and modifies system packages, PATH configuration, and tool directories. Use it only on systems you own or are explicitly authorised to test. Prefer an isolated VM or lab environment, and review module contents before running them with `sudo`.
-
-[Back to top](#modular-ctf--penetration-testing-tool-installer-framework)
+This project installs offensive-security tooling and modifies system packages, PATH configuration, and tool directories. Use it only on systems you own or are explicitly authorised to test. Prefer an isolated VM or lab, and review modules before running them with `sudo`.
