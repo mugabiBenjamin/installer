@@ -1,6 +1,6 @@
 # Modular CTF & Penetration Testing Tool Installer Framework
 
-A modular, idempotent Bash framework for provisioning a Debian/Ubuntu host with CTF and penetration-testing tooling (OSCP-aligned). Instead of one monolithic script, it separates orchestration, configuration, reusable helpers, toolchain managers, installation modules, and post-install verification.
+A modular, idempotent Bash framework for provisioning a Debian/Ubuntu host with CTF and penetration-testing tooling.
 
 > **Project status:** the module layer is implemented and runnable, but some orchestration wiring is still manual. Read [Current wiring status](#current-wiring-status) before your first full run.
 
@@ -12,6 +12,7 @@ A modular, idempotent Bash framework for provisioning a Debian/Ubuntu host with 
   - [Features](#features)
   - [Requirements](#requirements)
   - [Quick start](#quick-start)
+  - [Secrets and environment variables](#secrets-and-environment-variables)
   - [Installing on an existing machine](#installing-on-an-existing-machine)
     - [1. Inventory what is already present](#1-inventory-what-is-already-present)
     - [2. Source existing PATH settings first](#2-source-existing-path-settings-first)
@@ -55,6 +56,7 @@ Each module is standalone and can be run directly. Most install steps are guarde
 - **Multiple package sources** - APT, Homebrew, Go, uv, Cargo, Mamba, RubyGems, and direct GitHub release downloads.
 - **Isolated Python tooling** - Python tools get their own uv-managed virtual environments instead of modifying the system Python.
 - **PATH persistence** - manager scripts write to `/etc/profile.d/ctf-tools.sh` so toolchains survive new shells.
+- **Environment-based credentials** - recon API keys are read from a gitignored `.env` file instead of being embedded in tracked templates.
 - **Post-install verification** - `verify/verify.sh` checks a curated list of expected binaries.
 - **Failure isolation** - the orchestrator runs every selected module, records failures, and reports them at the end.
 - **Temporary-file cleanup** - `lib/trap.sh` provides a temporary-file registry and an exit/interrupt cleanup trap for modules that source it.
@@ -82,6 +84,12 @@ sudo mkdir -p /opt/tools
 sudo chown "$USER":"$USER" /opt/tools
 git clone https://github.com/mugabiBenjamin/installer.git /opt/tools/installer
 cd /opt/tools/installer
+
+# Optional: create a local .env for recon API keys.
+# Fill in only the services you use; leave the rest empty.
+cp .example.env .env
+chmod 600 .env
+$EDITOR .env
 
 # 1. Create directories and install base APT dependencies.
 #    Module 00 is not run automatically by install.sh.
@@ -119,6 +127,17 @@ Individual modules can also be run directly, for example `bash modules/08-passwo
 Scripts are committed without the executable bit (`100644`), so invoke them with `bash` rather than `./install.sh`.
 
 On a machine that already has some toolchains or tools, use the flow in [Installing on an existing machine](#installing-on-an-existing-machine) rather than running the quick start wholesale.
+
+## Secrets and environment variables
+
+The generated files are:
+
+- theHarvester: `~/.theHarvester/api-keys.yaml`
+- Amass: `~/.config/amass/config.ini`
+- Shodan CLI: `~/.config/shodan/api_key` (or `~/.shodan/api_key` if that directory already exists)
+- Censys CLI: `~/.config/censys/censys.cfg`
+
+Existing configuration files are preserved. To regenerate one from `.env`, move or remove the existing file and rerun `bash modules/03-recon-passive.sh`. The installer never logs credential values and sets generated files to mode `600`.
 
 ## Installing on an existing machine
 
@@ -191,7 +210,7 @@ Then install only the base packages you actually need.
 - `clone_or_update` expects a real `.git` directory. A non-empty directory without `.git` can block a clone.
 - `12-wordlists.sh` only checks whether SecLists and PayloadsAllTheThings are non-empty. A partial or unrelated directory is treated as installed.
 - Modules that create wrappers or symlinks use `ln -sf`; inspect `/usr/local/bin` for custom links that could be replaced.
-- Existing `~/.tmux.conf`, `~/.vimrc`, theHarvester API keys, and Amass config are preserved because they are only created when absent.
+- Existing `~/.tmux.conf`, `~/.vimrc`, theHarvester API keys, Amass config, Shodan API key, and Censys config are preserved because they are only created when absent. Put new values in `.env`; existing tool configs are not overwritten.
 - Check which binary wins when PATH precedence matters:
 
   ```bash
@@ -331,6 +350,7 @@ These behaviors are verified against the current scripts and are easy to miss:
 - `install.sh` does not call the manager installers. Sourcing `managers/*.sh` only defines functions; it does not install Go, uv, Rust, Homebrew, Mamba, or Ruby. Modules that need a missing toolchain warn and return success without installing anything.
 - `--no-ghidra`, `--no-pwndbg`, and `--minimal` are parsed but not currently enforced.
 - Modules run in child `bash` processes. PATH changes and exports do not carry from one module to the next; only `/etc/profile.d/ctf-tools.sh` persists across shells.
+- `modules/03-recon-passive.sh` loads the repository-root `.env` when present and writes recon credentials only when the target config file is absent. Existing configs are intentionally preserved.
 - `config/defaults.sh` hard-codes `/opt/tools/installer`, `/opt/tools`, and system paths. Moving the repository requires editing that file.
 - Scripts use `set -uo pipefail` but not `set -e`. Most helpers convert failures into warnings and return 0, so exit status alone is not proof that a tool installed. Inspect the log output and run verification.
 - `config/versions.sh` exists but is not sourced anywhere; its pins are currently inert.
@@ -387,17 +407,18 @@ Use `fetch_latest_github_release <owner/repo> <include-regex> [exclude-regex]` f
 
 ## Troubleshooting
 
-| Symptom                                           | Likely cause and fix                                                                                                                  |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `./install.sh: Permission denied`                 | Scripts are stored without the executable bit. Run `bash install.sh`.                                                                 |
-| `go`, `uv`, `cargo`, `brew`, or `mamba` not found | Run the corresponding manager, then `source /etc/profile.d/ctf-tools.sh` or open a new login shell.                                   |
-| A module reports success but tools are missing    | The required toolchain was unavailable; wrappers warn and return 0. Install the manager and re-run the module.                        |
-| `verify.sh` reports many missing binaries         | Expected; verification is global and includes tools not installed by every category. Compare against the categories you actually ran. |
-| `--no-ghidra` or `--no-pwndbg` has no effect      | These flags are not currently wired through to module 11. Edit `config/defaults.sh` or run `--only` without the `re` category.        |
-| Wireshark cannot capture as a normal user         | Group membership changes require a logout/login (or a new session) before they apply.                                                 |
-| apt packages fail to install                      | Check network access and whether the package exists for your distribution; modules log a warning and continue.                        |
-| An existing tool is skipped                       | That is the idempotency guard working. Remove the binary or directory only if you intend to reinstall it.                             |
-| Re-running the installer                          | Safe in most cases because modules check for existing commands, repositories, and files first.                                        |
+| Symptom                                           | Likely cause and fix                                                                                                                         |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `./install.sh: Permission denied`                 | Scripts are stored without the executable bit. Run `bash install.sh`.                                                                        |
+| `go`, `uv`, `cargo`, `brew`, or `mamba` not found | Run the corresponding manager, then `source /etc/profile.d/ctf-tools.sh` or open a new login shell.                                          |
+| A module reports success but tools are missing    | The required toolchain was unavailable; wrappers warn and return 0. Install the manager and re-run the module.                               |
+| `verify.sh` reports many missing binaries         | Expected; verification is global and includes tools not installed by every category. Compare against the categories you actually ran.        |
+| `--no-ghidra` or `--no-pwndbg` has no effect      | These flags are not currently wired through to module 11. Edit `config/defaults.sh` or run `--only` without the `re` category.               |
+| Wireshark cannot capture as a normal user         | Group membership changes require a logout/login (or a new session) before they apply.                                                        |
+| apt packages fail to install                      | Check network access and whether the package exists for your distribution; modules log a warning and continue.                               |
+| An existing tool is skipped                       | That is the idempotency guard working. Remove the binary or directory only if you intend to reinstall it.                                    |
+| Recon API keys are not applied                    | Existing tool configs are preserved. Edit `.env`, then move or remove the relevant config file and rerun `bash modules/03-recon-passive.sh`. |
+| Re-running the installer                          | Safe in most cases because modules check for existing commands, repositories, and files first.                                               |
 
 ## Conventions
 
@@ -406,6 +427,7 @@ Use `fetch_latest_github_release <owner/repo> <include-regex> [exclude-regex]` f
 - Use `banner`, `section`, `log`, `warn`, and `err` from `lib/log.sh` instead of raw `echo` for status output.
 - Prefer the wrappers in `lib/pkg.sh` so new tools remain idempotent and skippable.
 - Register temporary files with `register_tmp` and source `lib/trap.sh` where cleanup is needed.
+- Keep real credentials in `.env` (gitignored); commit only `.example.env` with empty placeholders. Never echo or log credential values.
 - Git history uses imperative, capitalized subjects, `feat/<area>` branches, and pull-request merges.
 - Do not commit `repomix-output.xml`; it is generated output and already gitignored.
 - There is no automated test suite or CI. Use `bash -n` for syntax checks and `verify/verify.sh` for installed-binary checks.
@@ -413,3 +435,5 @@ Use `fetch_latest_github_release <owner/repo> <include-regex> [exclude-regex]` f
 ## Security notice
 
 This project installs offensive security tooling and modifies system packages, PATH configuration, and tool directories. Use it only on systems you own or are explicitly authorised to test. Prefer an isolated VM or lab environment, and review module contents before running them with `sudo`.
+
+[Back to top](#modular-ctf--penetration-testing-tool-installer-framework)

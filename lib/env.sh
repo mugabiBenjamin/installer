@@ -4,6 +4,63 @@
 
 PROFILE_D="/etc/profile.d/ctf-tools.sh"
 
+# Parse a KEY=VALUE dotenv file without sourcing it. This keeps .env from
+# executing arbitrary shell code and avoids accidentally printing values.
+load_env() {
+  local env_file="${1:-}"
+  if [ -z "$env_file" ]; then
+    warn "load_env requires a file path"
+    return 1
+  fi
+  [ -f "$env_file" ] || return 0
+
+  local line key value
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+
+    [ -z "$line" ] && continue
+    case "$line" in
+      \#*) continue ;;
+      export\ *) line="${line#export }" ;;
+    esac
+
+    if [[ "$line" != *=* ]]; then
+      warn "Ignoring malformed line in ${env_file}"
+      continue
+    fi
+
+    key="${line%%=*}"
+    value="${line#*=}"
+    key="${key#"${key%%[![:space:]]*}"}"
+    key="${key%"${key##*[![:space:]]}"}"
+
+    if [[ ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+      warn "Ignoring invalid variable name in ${env_file}: ${key}"
+      continue
+    fi
+
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    if [[ "$value" != \"*\" && "$value" != \'*\' ]]; then
+      value="${value%%[[:space:]]#*}"
+      value="${value%"${value##*[![:space:]]}"}"
+    fi
+    if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+      value="${value#\"}"
+      value="${value%\"}"
+    elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
+      value="${value#\'}"
+      value="${value%\'}"
+    fi
+
+    export "${key}=${value}"
+  done < "$env_file"
+
+  log "Loaded environment variables from ${env_file}"
+}
+
 persist_line() {
   local marker="$1" line="$2"
   sudo mkdir -p "$(dirname "${PROFILE_D}")"
